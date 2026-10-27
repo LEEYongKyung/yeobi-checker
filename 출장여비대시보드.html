@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>출장여비 자체점검 자동 대시보드</title>
+    <!-- 서식/스타일 완벽 지원 엑셀 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: "맑은 고딕", 맑은고딕, sans-serif; }
+        body { background-color: #f1f5f9; margin: 0; padding: 25px; color: #1e293b; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        
+        .header { background: #1e3a8a; color: white; padding: 20px 25px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .header h1 { margin: 0 0 5px 0; font-size: 20px; }
+        .header p { margin: 0; font-size: 13px; opacity: 0.85; }
+
+        .user-bar { background: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; border: 1px solid #cbd5e1; }
+        .user-bar input { padding: 6px 10px; border: 1px solid #94a3b8; border-radius: 4px; font-size: 13px; width: 140px; }
+
+        .upload-card { background: white; border: 2.5px dashed #2563eb; border-radius: 12px; padding: 32px 20px; text-align: center; cursor: pointer; position: relative; margin-bottom: 20px; background: #f8faff; transition: all 0.2s; }
+        .upload-card:hover { background: #eff6ff; border-color: #1d4ed8; }
+        .upload-card.ok { border-color: #16a34a; background: #f0fdf4; }
+        .upload-card input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #e2e8f0; }
+        .stat-title { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+        .stat-val { font-size: 18px; font-weight: bold; color: #1e3a8a; }
+
+        .main-box { background: white; border-radius: 10px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        .btn-down { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; float: right; font-size: 13px; }
+        .btn-down:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+        th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: center; }
+        th { background: #f8fafc; font-weight: bold; }
+        .time-cell { white-space: pre-line; line-height: 1.4; }
+        .zero-amt { color: #dc2626; font-weight: bold; }
+
+        /* 제작자 안내 배너 */
+        .footer-banner { background: #1e293b; color: #e2e8f0; padding: 16px 20px; border-radius: 8px; font-size: 12px; line-height: 1.6; border-left: 5px solid #2563eb; }
+        .footer-banner b { color: #38bdf8; }
+        .footer-warn { color: #f87171; font-weight: bold; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>🏢 출장여비 자체점검 자동 대시보드 (규정 계산식 적용)</h1>
+        <p>확인 행 기준 차량 이용 여부 및 유효 출장시간에 따라 여비(1만원/2만원/미지급)가 자동 판정됩니다.</p>
+    </div>
+
+    <div class="user-bar">
+        <span><b>소속:</b> <input type="text" id="dept" placeholder="자동인식"></span>
+        <span><b>직급:</b> 
+            <input type="text" id="pos" list="posList" placeholder="직급 입력">
+            <datalist id="posList">
+                <option value="사회7급"><option value="행정7급"><option value="사회8급"><option value="행정8급"><option value="사회9급"><option value="행정9급"><option value="행정6급"><option value="사회6급"><option value="행정5급">
+            </datalist>
+        </span>
+        <span><b>성명:</b> <input type="text" id="name" placeholder="자동인식"></span>
+        <span style="font-size: 12px; color: #64748b; margin-left: auto;">* 직급은 브라우저에 자동 기억됩니다.</span>
+    </div>
+
+    <!-- 파일 업로드 영역 -->
+    <div class="upload-card" id="uploadCard">
+        <input type="file" id="fileInput" accept=".xls,.xlsx">
+        <div style="font-size: 38px; margin-bottom: 8px;">📑</div>
+        <div style="font-size: 16px; font-weight: bold; color: #1e3a8a; margin-bottom: 4px;">출장내역서 엑셀 파일 넣기 (.xls / .xlsx)</div>
+        <div id="fileMsg" style="font-size: 13px; color: #64748b;">이곳을 클릭하거나 출장내역서 파일(신청/확인 통합)을 끌어다 놓으세요</div>
+    </div>
+
+    <div class="stat-grid">
+        <div class="stat-card"><div class="stat-title">점검 대상 월</div><div class="stat-val" id="stMonth">-</div></div>
+        <div class="stat-card"><div class="stat-title">총 출장 건수</div><div class="stat-val" id="stCount">0 건</div></div>
+        <div class="stat-card"><div class="stat-title">공용차량 이용 건수</div><div class="stat-val" id="stCar">0 건</div></div>
+        <div class="stat-card"><div class="stat-title">총 여비 지급액</div><div class="stat-val" id="stAmt">0 원</div></div>
+    </div>
+
+    <div class="main-box">
+        <div style="overflow: hidden; margin-bottom: 10px;">
+            <b style="font-size: 15px;">📊 점검 내역 미리보기</b>
+            <button class="btn-down" id="btnDown" disabled onclick="downloadExcel()">📥 원본 양식 엑셀 다운로드 (.xlsx)</button>
+        </div>
+        <div id="tblArea" style="text-align: center; color: #94a3b8; padding: 35px;">
+            출장내역서 파일을 넣으면 규정에 맞춘 여비 결과 표가 자동으로 생성됩니다.
+        </div>
+    </div>
+
+    <!-- 제작자 및 저작권 안내 배너 -->
+    <div class="footer-banner">
+        <div><b>제작자:</b> 서대문구 김정길</div>
+        <div><b>기준 규정:</b> 공무원 여비업무 처리기준 (타임라인 순차 매칭 엔진 적용)</div>
+        <div class="footer-warn">⚠️ 안내: 본 프로그램의 저작권은 제작자(서대문구 김정길)에게 있으며, 제작자의 동의 없이 코드를 무단 수정하거나 외부로 무단 배포하는 행위를 엄격히 금지합니다.</div>
+    </div>
+</div>
+
+<script>
+let resultList = [];
+let resYear = "2026", resMonth = "";
+
+window.onload = function() {
+    let savedPos = localStorage.getItem("travel_user_pos");
+    if (savedPos) document.getElementById('pos').value = savedPos;
+    else document.getElementById('pos').value = "사회7급";
+};
+
+document.getElementById('pos').onchange = function() {
+    localStorage.setItem("travel_user_pos", this.value);
+};
+
+document.getElementById('fileInput').onchange = function(e) {
+    if (e.target.files.length > 0) {
+        let file = e.target.files[0];
+        document.getElementById('fileMsg').innerText = "✓ " + file.name + " (자동 분석 완료)";
+        document.getElementById('uploadCard').classList.add('ok');
+        processSingleFile(file);
+    }
+};
+
+function parseDateTime(str) {
+    if (!str) return null;
+    let s = str.trim().replace(/\//g, '-');
+    let m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})/);
+    if (m) {
+        return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]), parseInt(m[4]), parseInt(m[5]));
+    }
+    return null;
+}
+
+function getEffectiveMinutes(reqStartStr, reqEndStr, confStartStr, confEndStr) {
+    let rStart = parseDateTime(reqStartStr);
+    let rEnd = parseDateTime(reqEndStr);
+    let cStart = parseDateTime(confStartStr);
+    let cEnd = parseDateTime(confEndStr);
+
+    if (!rStart || !rEnd || !cStart || !cEnd) return 0;
+
+    let validStart = cStart > rStart ? cStart : rStart;
+    let validEnd = cEnd < rEnd ? cEnd : rEnd;
+
+    if (validEnd > validStart) {
+        return Math.floor((validEnd - validStart) / 60000);
+    }
+    return 0;
+}
+
+function calcTravelExpense(effectiveMin, isCar) {
+    if (isCar) {
+        if (effectiveMin < 240) return 0;
+        else return 10000;
+    } else {
+        if (effectiveMin < 60) return 0;
+        else if (effectiveMin < 240) return 10000;
+        else return 20000;
+    }
+}
+
+function processSingleFile(file) {
+    let reader = new FileReader();
+    reader.onload = function(e) {
+        let data = new Uint8Array(e.target.result);
+        let wb = XLSX.read(data, { type: 'array' });
+        let ws = wb.Sheets[wb.SheetNames[0]];
+        let rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        let cSeq = -1, cStart = -1, cEnd = -1, cDur = -1, cCar = -1, cDept = -1, cName = -1, cPurp = -1, hRow = -1;
+        for (let r = 0; r < Math.min(10, rows.length); r++) {
+            let row = rows[r];
+            for (let c = 0; c < row.length; c++) {
+                let txt = String(row[c]).trim();
+                if (txt === "순번") cSeq = c;
+                if (txt === "출발일자") cStart = c;
+                if (txt === "도착일자") cEnd = c;
+                if (txt === "총출장시간") cDur = c;
+                if (txt === "출장목적") cPurp = c;
+                if (txt === "차량") cCar = c;
+                if (txt === "소속") cDept = c;
+                if (txt === "출장자") cName = c;
+            }
+            if (cSeq !== -1 && cStart !== -1) { hRow = r; break; }
+        }
+
+        let allRows = [], dDept = "", dName = "";
+        for (let r = hRow + 1; r < rows.length; r++) {
+            let row = rows[r];
+            let rowStr = row.join(" ");
+            let start = String(row[cStart] || "").trim();
+            let end = String(row[cEnd] || "").trim();
+            let dur = String(row[cDur] || "").trim();
+            let car = String(row[cCar] || "미사용").trim();
+            let purp = String(row[cPurp] || "").trim();
+
+            if (!dDept && cDept !== -1) dDept = String(row[cDept] || "").trim();
+            if (!dName && cName !== -1) dName = String(row[cName] || "").trim();
+
+            if (start.match(/\d{4}-\d{1,2}-\d{1,2}/)) {
+                // [수정] 행 전체 문자열에 "확인"/"신청"이 포함되었는지로 판정하면
+                // 출장목적에 "~확인" 같은 단어가 들어간 신청 행이 확인 행으로 잘못 분류된다.
+                // 셀 값이 정확히 "신청" 또는 "확인"인 칸(구분 칸)만 보고 판정한다.
+                let type = "";
+                for (let c = 0; c < row.length; c++) {
+                    let v = String(row[c] || "").trim();
+                    if (v === "확인") { type = "확인"; break; }
+                    if (v === "신청") { type = "신청"; break; }
+                }
+                if (!type) type = "신청";
+
+                let isCarUsed = car.includes("사용") && !car.includes("미사용");
+                allRows.push({
+                    type: type,
+                    start: start,
+                    end: end,
+                    dur: dur,
+                    purp: purp,
+                    car: isCarUsed ? "O" : "X"
+                });
+            }
+        }
+
+        if (dDept) document.getElementById('dept').value = dDept;
+        if (dName) document.getElementById('name').value = dName;
+
+        let reqList = allRows.filter(r => r.type === "신청");
+        let confList = allRows.filter(r => r.type === "확인");
+
+        resultList = [];
+
+        let dateMap = {};
+        reqList.forEach(req => {
+            let dt = req.start.split(" ")[0];
+            if (!dateMap[dt]) dateMap[dt] = { reqs: [], confs: [] };
+            dateMap[dt].reqs.push(req);
+        });
+        confList.forEach(conf => {
+            let dt = conf.start.split(" ")[0];
+            if (!dateMap[dt]) dateMap[dt] = { reqs: [], confs: [] };
+            dateMap[dt].confs.push(conf);
+        });
+
+        for (let dt in dateMap) {
+            let rArr = dateMap[dt].reqs;
+            let cArr = dateMap[dt].confs;
+            rArr.sort((a, b) => a.start.localeCompare(b.start));
+            cArr.sort((a, b) => a.start.localeCompare(b.start));
+
+            // [수정] 신청 건수만큼만 돌면 짝이 안 맞는 확인 행이 조용히 사라진다.
+            // 둘 중 많은 쪽 기준으로 돌려서 누락 자체가 발생하지 않게 한다.
+            let pairCount = Math.max(rArr.length, cArr.length);
+            for (let i = 0; i < pairCount; i++) {
+                let req = rArr[i] || null;
+                let matchedConf = cArr[i] || null;
+                let base = req || matchedConf;
+
+                let m = base.start.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+                let dateStr = "";
+                if (m) {
+                    resYear = m[1];
+                    resMonth = parseInt(m[2]) + "월";
+                    dateStr = parseInt(m[2]) + "월 " + parseInt(m[3]) + "일";
+                }
+
+                let reqTime = "-";
+                if (req) {
+                    let t1Req = req.start.split(" ")[1] || req.start;
+                    let t2Req = req.end.split(" ")[1] || req.end;
+                    reqTime = " " + t1Req + "~" + t2Req + "\n(" + req.dur + ") ";
+                }
+
+                let confTime = "-";
+                let effectiveMin = 0;
+                let confCar = "X";
+                if (matchedConf) {
+                    let t1Conf = matchedConf.start.split(" ")[1] || matchedConf.start;
+                    let t2Conf = matchedConf.end.split(" ")[1] || matchedConf.end;
+                    confTime = " " + t1Conf + "~" + t2Conf + "\n(" + matchedConf.dur + ") ";
+                    confCar = matchedConf.car;
+                    if (req) {
+                        effectiveMin = getEffectiveMinutes(req.start, req.end, matchedConf.start, matchedConf.end);
+                    }
+                }
+
+                let isCar = (confCar === "O");
+                let finalCarMark = isCar ? "O" : "X";
+                let calculatedAmt = calcTravelExpense(effectiveMin, isCar);
+
+                resultList.push({
+                    dt: base.start,
+                    dateStr: dateStr,
+                    reqTime: reqTime,
+                    confTime: confTime,
+                    car: finalCarMark,
+                    effectiveMin: effectiveMin,
+                    amt: calculatedAmt
+                });
+            }
+        }
+
+        resultList.sort((a, b) => a.dt.localeCompare(b.dt));
+        renderDashboard();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function renderDashboard() {
+    let carCount = resultList.filter(r => r.car === "O").length;
+    let totalAmt = 0;
+    resultList.forEach(r => totalAmt += r.amt);
+
+    document.getElementById('stMonth').innerText = resMonth;
+    document.getElementById('stCount').innerText = resultList.length + " 건";
+    document.getElementById('stCar').innerText = carCount + " 건";
+    document.getElementById('stAmt').innerText = totalAmt.toLocaleString() + " 원";
+    document.getElementById('btnDown').disabled = false;
+
+    let html = `<table>
+        <thead>
+            <tr>
+                <th style="width: 12%">구 분</th>
+                <th style="width: 22%">① 출장명령시간</th>
+                <th style="width: 22%">② 결과보고 출장시간</th>
+                <th style="width: 10%">③ 공용차량</th>
+                <th style="width: 12%">④ 여비지급대상</th>
+                <th style="width: 12%">⑤ 업무처리내역</th>
+                <th style="width: 10%">⑥ 최종금액</th>
+            </tr>
+        </thead><tbody>`;
+
+    resultList.forEach(r => {
+        let amtClass = r.amt === 0 ? "zero-amt" : "";
+        html += `<tr>
+            <td><b>${r.dateStr}</b></td>
+            <td class="time-cell">${r.reqTime}</td>
+            <td class="time-cell">${r.confTime}</td>
+            <td>${r.car}</td>
+            <td class="${amtClass}">${r.amt.toLocaleString()}원</td>
+            <td>해당없음</td>
+            <td class="${amtClass}" style="color: ${r.amt === 0 ? '#dc2626' : '#1e3c72'};"><b>${r.amt.toLocaleString()}원</b></td>
+        </tr>`;
+    });
+
+    html += `<tr style="background:#f1f5f9; font-weight:bold;">
+        <td>계</td><td>-</td><td>-</td><td>-</td>
+        <td>${totalAmt.toLocaleString()}원</td>
+        <td>-</td>
+        <td style="color:#2563eb;">${totalAmt.toLocaleString()}원</td>
+    </tr></tbody></table>`;
+
+    document.getElementById('tblArea').innerHTML = html;
+}
+
+function downloadExcel() {
+    if (resultList.length === 0) return;
+    let dept = document.getElementById('dept').value || "남가좌2동";
+    let pos = document.getElementById('pos').value || "사회7급";
+    let name = document.getElementById('name').value || "김정길";
+
+    let wb = XLSX.utils.book_new();
+    let ws = {};
+
+    let bThin = { style: "thin", color: { rgb: "A0A0A0" } };
+    let bMed = { style: "medium", color: { rgb: "000000" } };
+
+    function getBorder(rIdx, cIdx, maxR) {
+        let top = (rIdx === 4) ? bMed : bThin;
+        let bottom = (rIdx === maxR) ? bThin : bThin;
+        let left = (cIdx === 0) ? bMed : bThin;
+        let right = (cIdx === 7) ? bMed : bThin;
+        return { top: top, bottom: bottom, left: left, right: right };
+    }
+
+    ws["A1"] = {
+        v: `개인별 출장여비 자체점검 결과(${resYear}년 ${resMonth})`,
+        t: "s",
+        s: { font: { name: "맑은 고딕", sz: 21, bold: true }, alignment: { horizontal: "center", vertical: "center" } }
+    };
+
+    ws["E3"] = {
+        v: `부서 : ${dept}          직급 :  ${pos}               성명 : ${name} `,
+        t: "s",
+        s: { font: { name: "맑은 고딕", sz: 13, bold: true }, alignment: { horizontal: "left", vertical: "center" } }
+    };
+
+    let headers = [
+        "구 분", "①출장명령시간", "②결과보고\n   출장시간",
+        "③공용차량 \n   이용여부\n  (O, X)", "④여비지급\n   대상금액\n(원)",
+        "⑤출장시간 중 \n업무처리 내역\n(처리시간, 업무내용)", "⑥여비지급\n   최종금액(원)", "비고"
+    ];
+    let fillHeader = { fgColor: { rgb: "FFFFD9" } };
+
+    for (let c = 0; c < 8; c++) {
+        let cellRef = XLSX.utils.encode_cell({ r: 3, c: c });
+        ws[cellRef] = {
+            v: headers[c],
+            t: "s",
+            s: {
+                font: { name: "맑은 고딕", sz: 12, bold: true },
+                alignment: { horizontal: "center", vertical: "center", wrapText: true },
+                fill: fillHeader,
+                border: getBorder(4, c, 5 + resultList.length)
+            }
+        };
+    }
+
+    let lastRowIdx = 5 + resultList.length;
+    let totalAmt = 0;
+    resultList.forEach(r => totalAmt += r.amt);
+
+    for (let c = 0; c < 8; c++) {
+        let cellRef = XLSX.utils.encode_cell({ r: 4, c: c });
+        if (c === 0) {
+            ws[cellRef] = {
+                v: "계", t: "s",
+                s: { font: { name: "맑은 고딕", sz: 12, bold: true }, alignment: { horizontal: "center", vertical: "center" }, border: getBorder(5, c, lastRowIdx) }
+            };
+        } else if (c === 4 || c === 6) {
+            ws[cellRef] = {
+                f: `SUM(${c === 4 ? "E" : "G"}6:${c === 4 ? "E" : "G"}${lastRowIdx})`,
+                v: totalAmt,
+                t: "n",
+                z: "#,##0",
+                s: { font: { name: "맑은 고딕", sz: 12, bold: true }, alignment: { horizontal: "right", vertical: "center" }, border: getBorder(5, c, lastRowIdx) }
+            };
+        } else {
+            ws[cellRef] = {
+                v: "", t: "s",
+                s: { font: { name: "맑은 고딕", sz: 12, bold: false }, alignment: { horizontal: "center", vertical: "center" }, border: getBorder(5, c, lastRowIdx) }
+            };
+        }
+    }
+
+    resultList.forEach((r, idx) => {
+        let rIdx = 5 + idx;
+        let rowData = [
+            { v: r.dateStr, t: "s", align: "center", font: "맑은 고딕" },
+            { v: r.reqTime, t: "s", align: "center", font: "맑은 고딕", wrap: true },
+            { v: r.confTime, t: "s", align: "center", font: "맑은 고딕", wrap: true },
+            { v: r.car, t: "s", align: "center", font: "바탕체" },
+            { v: r.amt, t: "n", align: "right", font: "맑은 고딕", fmt: "#,##0" },
+            { v: "해당없음", t: "s", align: "center", font: "맑은 고딕" },
+            { v: r.amt, t: "n", align: "right", font: "맑은 고딕", fmt: "#,##0" },
+            { v: "", t: "s", align: "center", font: "맑은 고딕" }
+        ];
+
+        for (let c = 0; c < 8; c++) {
+            let cellRef = XLSX.utils.encode_cell({ r: rIdx, c: c });
+            let d = rowData[c];
+            ws[cellRef] = {
+                v: d.v,
+                t: d.t,
+                z: d.fmt,
+                s: {
+                    font: { name: d.font, sz: 9, bold: false },
+                    alignment: { horizontal: d.align, vertical: "center", wrapText: !!d.wrap },
+                    border: getBorder(rIdx + 1, c, lastRowIdx)
+                }
+            };
+        }
+    });
+
+    ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+        { s: { r: 2, c: 4 }, e: { r: 2, c: 7 } }
+    ];
+
+    ws["!cols"] = [
+        { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
+        { wch: 14 }, { wch: 22 }, { wch: 14 }, { wch: 16 }
+    ];
+
+    ws["!rows"] = [
+        { hpt: 31.5 },
+        { hpt: 21.0 },
+        { hpt: 27.0 },
+        { hpt: 51.75 },
+        { hpt: 31.5 }
+    ];
+    for (let i = 0; i < resultList.length; i++) {
+        ws["!rows"].push({ hpt: 39.95 });
+    }
+
+    ws["!ref"] = XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: lastRowIdx - 1, c: 7 }
+    });
+
+    XLSX.utils.book_append_sheet(wb, ws, `${resMonth} 점검결과`);
+    XLSX.writeFile(wb, `출장여비_자체점검_결과_${resYear}_${resMonth}_${name}.xlsx`);
+}
+</script>
+</body>
+</html>
